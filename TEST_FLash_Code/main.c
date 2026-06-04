@@ -48,6 +48,7 @@ void main(void)
     UART_printStr("Writing...\r\n");
     result = Flash_WriteData(FLASH_ERASE_START_ADDR, testBuf, 128U);
 
+    //エラーログ出力用
     switch(result)
     {
         case FLASH_CTRL_OK:
