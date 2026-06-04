@@ -4,8 +4,97 @@
 #include "device.h"
 #include "flash_ctrl.h"
 #include "uart_print.h"
+#include "i2c_slave.h"
 #include <string.h>
+#if 0
+// FW書き込みモード判定
+// 【後で正式な条件に変更】
+// 例：0x087400のフラグを読む
+static bool isFwUpdateMode(void)
+{
+    // 仮実装：常にFW書き込みモード
+    return true;
+}
 
+static void resetDevice(void)
+{
+    DINT;
+
+    SysCtl_resetDevice();
+
+    while(1) {}
+}
+__attribute__((noreturn))
+static void jumpToApplication(void)
+{
+    DINT;
+    IER = 0x0000;
+    IFR = 0x0000;
+
+    SysCtl_disableWatchdog();
+
+    asm(" NOP");
+    asm(" NOP");
+    asm(" NOP");
+    asm(" NOP");
+
+    asm(" LB #0x082000");
+
+    while(1){};
+}
+
+void main(void)
+{
+    Device_init();
+    Device_initGPIO();
+
+#ifdef _FLASH
+    memcpy(&RamfuncsRunStart,
+           &RamfuncsLoadStart,
+           (size_t)&RamfuncsLoadSize);
+#endif
+
+    UART_init();
+    UART_printStr("=== Boot Start ===\r\n");
+
+    Flash_CtrlInit();
+    I2C_SlaveInit();
+
+    if(isFwUpdateMode())
+    {
+        UART_printStr("FW Update Mode\r\n");
+
+        // 消去
+        UART_printStr("Erasing...\r\n");
+        FlashCtrlResult eraseResult = Flash_EraseRange(
+                                          FLASH_ERASE_START_ADDR,
+                                          FLASH_ERASE_END_ADDR);
+        if(eraseResult != FLASH_CTRL_OK)
+        {
+            UART_printStr("Erase FAIL\r\n");
+            while(1){}
+        }
+        UART_printStr("Erase OK\r\n");
+
+        // I2C受信 → Flash書き込み
+        I2cSlaveResult i2cResult = I2C_FwUpdate();
+        if(i2cResult != I2C_SLAVE_OK)
+        {
+            UART_printStr("FW Update FAIL\r\n");
+            while(1){}
+        }
+        resetDevice();
+
+    }
+    else
+    {
+        UART_printStr("Normal Mode\r\n");
+        jumpToApplication();
+    }
+
+    while(1){}
+}
+#else
 void main(void)
 {
     FlashCtrlResult result;
@@ -77,3 +166,4 @@ void main(void)
 
     while(1){}
 }
+#endif
