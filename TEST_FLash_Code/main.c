@@ -1,16 +1,14 @@
-
-
 /**
  * main.c
  */
 #include "device.h"
-#include "flash_test.h"
+#include "flash_ctrl.h"
 #include "uart_print.h"
 #include <string.h>
 
 void main(void)
 {
-    FlashTestResult result;
+    FlashCtrlResult result;
 
     Device_init();
     Device_initGPIO();
@@ -21,39 +19,54 @@ void main(void)
            (size_t)&RamfuncsLoadSize);
 #endif
 
-    // ★順序重要：Flash Wait State → UART → API初期化
-    Flash_initModule(FLASH0CTRL_BASE, FLASH0ECC_BASE, DEVICE_FLASH_WAITSTATES);
-
+    // UART初期化
     UART_init();
     UART_printStr("=== Flash Test Start ===\r\n");
 
-    // ★ CPU0_REGISTER_ADDRESS を使用
-    Fapi_initializeAPI((Fapi_FmcRegistersType *)CPU0_REGISTER_ADDRESS, 120U);
+    // Flash API初期化（Flash_initModule含む）
+    Flash_CtrlInit();
 
-    // ★ setActiveFlashBank は必ず initializeAPI の直後
-    Fapi_setActiveFlashBank(Fapi_FlashBank0);
+    // 全範囲消去
+    UART_printStr("Erasing...\r\n");
+    result = Flash_EraseRange(FLASH_ERASE_START_ADDR, FLASH_ERASE_END_ADDR);
 
-    // ★ 消去前にステータスクリア
-    Fapi_issueAsyncCommand(Fapi_ClearStatus);
-    while(Fapi_checkFsmForReady() != Fapi_Status_FsmReady){}
+    if(result != FLASH_CTRL_OK)
+    {
+        UART_printStr("Result: ERASE FAIL\r\n");
+        while(1){}
+    }
+    UART_printStr("Erase OK\r\n");
 
-    UART_printStr("Erasing sector...\r\n");
+    // 書き込みテスト（先頭アドレスに128words=256バイト分のパターンデータ）
+    uint16_t testBuf[128];
+    uint32_t i;
+    for(i = 0; i < 128U; i++)
+    {
+        testBuf[i] = (uint16_t)(0xA500U | (i & 0xFFU));
+    }
 
-    result = Flash_RunTest();
+    UART_printStr("Writing...\r\n");
+    result = Flash_WriteData(FLASH_ERASE_START_ADDR, testBuf, 128U);
 
     switch(result)
     {
-        case FLASH_TEST_OK:
+        case FLASH_CTRL_OK:
             UART_printStr("Result: OK\r\n");
             break;
-        case FLASH_TEST_ERASE_FAIL:
+        case FLASH_CTRL_ERASE_FAIL:
             UART_printStr("Result: ERASE FAIL\r\n");
             break;
-        case FLASH_TEST_PROGRAM_FAIL:
-            UART_printStr("Result: PROGRAM FAIL\r\n");
+        case FLASH_CTRL_BLANKCHECK_FAIL:
+            UART_printStr("Result: BLANKCHECK FAIL\r\n");
             break;
-        case FLASH_TEST_VERIFY_FAIL:
+        case FLASH_CTRL_WRITE_FAIL:
+            UART_printStr("Result: WRITE FAIL\r\n");
+            break;
+        case FLASH_CTRL_VERIFY_FAIL:
             UART_printStr("Result: VERIFY FAIL\r\n");
+            break;
+        case FLASH_CTRL_INVALID_ADDR:
+            UART_printStr("Result: INVALID ADDR\r\n");
             break;
         default:
             break;

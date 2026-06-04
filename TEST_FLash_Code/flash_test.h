@@ -15,8 +15,9 @@
 #define TEST_FLASH_START_ADDR    0x081C00U  // Sector7先頭
 #define TEST_FLASH_END_ADDR      0x0873FFU  // Sector28終端
 
-// 書き込みテストデータサイズ（16bit words単位）
-#define TEST_DATA_SIZE           128U
+// 書き込みチャンクサイズ（16bit words単位）
+// 8words = 16バイト
+#define WRITE_CHUNK_SIZE         8U
 
 // セクター情報テーブル用
 typedef struct {

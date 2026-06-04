@@ -37,8 +37,8 @@ static const FlashSectorInfo sectorTable[] =
 
 #define NUM_SECTORS  (sizeof(sectorTable) / sizeof(sectorTable[0]))
 
-// 8word書き込みバッファ（RAMに置く）
-static uint16_t writeBuf[8];
+// 書き込みバッファ（RAMに置く）
+static uint16_t writeBuf[WRITE_CHUNK_SIZE];
 
 //
 // 保護解除ヘルパー
@@ -134,11 +134,11 @@ FlashTestResult Flash_RunTest(void)
         UART_printHex(sectorTable[i].startAddr);
         UART_printStr("\r\n");
 
-        // 1セクター分（0x400 words）を8wordsずつ書き込む
-        for(j = 0; j < sectorTable[i].size; j += 8, u32Index += 8)
+        // 1セクター分（0x400 words）をWRITE_CHUNK_SIZEずつ書き込む
+        for(j = 0; j < sectorTable[i].size; j += WRITE_CHUNK_SIZE, u32Index += WRITE_CHUNK_SIZE)
         {
             uint32_t k;
-            for(k = 0; k < 8; k++)
+            for(k = 0; k < WRITE_CHUNK_SIZE; k++)
             {
                 writeBuf[k] = (uint16_t)(0xA500U | (u16Pattern & 0xFFU));
                 u16Pattern++;
@@ -149,7 +149,7 @@ FlashTestResult Flash_RunTest(void)
             status = Fapi_issueProgrammingCommand(
                          (uint32 *)u32Index,
                          writeBuf,
-                         8,
+                         WRITE_CHUNK_SIZE,
                          0, 0,
                          Fapi_AutoEccGeneration);
 
