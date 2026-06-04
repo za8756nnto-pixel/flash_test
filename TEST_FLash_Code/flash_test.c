@@ -8,106 +8,196 @@
 #include "uart_print.h"
 #include "flash_programming_f280015x.h"
 
-static uint16_t testData[TEST_DATA_SIZE];
-
-#pragma CODE_SECTION(Flash_RunTest, ".TI.ramfunc")
-FlashTestResult Flash_RunTest(void)
+// 消去対象セクターテーブル（Sector7～Sector28）
+static const FlashSectorInfo sectorTable[] =
 {
-    uint32_t i;
-    uint32_t u32Index;
-    Fapi_StatusType          status;
-    Fapi_FlashStatusType     flashStatus;
-    Fapi_FlashStatusWordType flashStatusWord;
+    { 0x081C00U, 0x0400U },  // Sector7
+    { 0x082000U, 0x0400U },  // Sector8
+    { 0x082400U, 0x0400U },  // Sector9
+    { 0x082800U, 0x0400U },  // Sector10
+    { 0x082C00U, 0x0400U },  // Sector11
+    { 0x083000U, 0x0400U },  // Sector12
+    { 0x083400U, 0x0400U },  // Sector13
+    { 0x083800U, 0x0400U },  // Sector14
+    { 0x083C00U, 0x0400U },  // Sector15
+    { 0x084000U, 0x0400U },  // Sector16
+    { 0x084400U, 0x0400U },  // Sector17
+    { 0x084800U, 0x0400U },  // Sector18
+    { 0x084C00U, 0x0400U },  // Sector19
+    { 0x085000U, 0x0400U },  // Sector20
+    { 0x085400U, 0x0400U },  // Sector21
+    { 0x085800U, 0x0400U },  // Sector22
+    { 0x085C00U, 0x0400U },  // Sector23
+    { 0x086000U, 0x0400U },  // Sector24
+    { 0x086400U, 0x0400U },  // Sector25
+    { 0x086800U, 0x0400U },  // Sector26
+    { 0x086C00U, 0x0400U },  // Sector27
+    { 0x087000U, 0x0400U },  // Sector28
+};
 
-    // 1. テストデータ作成
-    for(i = 0; i < TEST_DATA_SIZE; i++)
-    {
-        testData[i] = (uint16_t)(0xA500U | (i & 0xFFU));
-    }
+#define NUM_SECTORS  (sizeof(sectorTable) / sizeof(sectorTable[0]))
 
-    // 2. FSMステータスクリア（サンプルのClearFSMStatus相当）
+// 8word書き込みバッファ（RAMに置く）
+static uint16_t writeBuf[8];
+
+//
+// 保護解除ヘルパー
+//
+#pragma CODE_SECTION(Flash_ClearAndUnlock, ".TI.ramfunc")
+static Fapi_StatusType Flash_ClearAndUnlock(void)
+{
+    Fapi_FlashStatusType flashStatus;
+    Fapi_StatusType status = Fapi_Status_Success;
+
     while(Fapi_checkFsmForReady() != Fapi_Status_FsmReady){}
     flashStatus = Fapi_getFsmStatus();
     if(flashStatus != 0)
     {
         status = Fapi_issueAsyncCommand(Fapi_ClearStatus);
-        while(Fapi_getFsmStatus() != 0){}  // ★ゼロになるまで待つ
+        while(Fapi_getFsmStatus() != 0){}
     }
 
-    // ★★ 3. セクター書き込み保護を解除 ★★
-    // Sector8 は bit8 → CMDWEPROTA の bit8 を解除 (0xFFFFFF00→bit0-7保護, bit8-31解除)
-    // Sector8(0x082000)はSector番号8なのでCMDWEPROTA bit8
-    Fapi_setupBankSectorEnable(FLASH_WRAPPER_PROGRAM_BASE + FLASH_O_CMDWEPROTA, 0xFFFEFFFF); // ← 変更
-    Fapi_setupBankSectorEnable(FLASH_WRAPPER_PROGRAM_BASE + FLASH_O_CMDWEPROTB, 0xFFFFFFFF);
+    Fapi_setupBankSectorEnable(FLASH_WRAPPER_PROGRAM_BASE + FLASH_O_CMDWEPROTA, 0x00000000U);
+    Fapi_setupBankSectorEnable(FLASH_WRAPPER_PROGRAM_BASE + FLASH_O_CMDWEPROTB, 0x00000000U);
 
-    // 4. セクター消去
-    status = Fapi_issueAsyncCommandWithAddress(
-                 Fapi_EraseSector,
-                 (uint32 *)TEST_FLASH_START_ADDR);
+    return status;
+}
 
-    while(Fapi_checkFsmForReady() != Fapi_Status_FsmReady){}
-    flashStatus = Fapi_getFsmStatus();
+#pragma CODE_SECTION(Flash_RunTest, ".TI.ramfunc")
+FlashTestResult Flash_RunTest(void)
+{
+    uint32_t i;
+    uint32_t j;
+    uint32_t u32Index;
+    uint16_t u16Pattern;
+    Fapi_StatusType          status;
+    Fapi_FlashStatusType     flashStatus;
+    Fapi_FlashStatusWordType flashStatusWord;
 
-    UART_printStr("flashStatus after erase: ");
-    UART_printHex((uint32_t)flashStatus);
-    UART_printStr("\r\n");
+    //
+    // 1. 全セクター消去
+    //
+    UART_printStr("--- Erase Start ---\r\n");
 
-    if(flashStatus != 3)  // ★サンプルは != 3 で判定
+    for(i = 0; i < NUM_SECTORS; i++)
     {
-        return FLASH_TEST_ERASE_FAIL;
-    }
+        Flash_ClearAndUnlock();
 
-    // 5. 消去ベリファイ
-    status = Fapi_doBlankCheck(
-                 (uint32 *)TEST_FLASH_START_ADDR,
-                 TEST_DATA_SIZE / 2,  // u32length = u16length / 2
-                 &flashStatusWord);
-    if(status != Fapi_Status_Success)
-    {
-        return FLASH_TEST_ERASE_FAIL;
-    }
+        UART_printStr("Erasing: ");
+        UART_printHex(sectorTable[i].startAddr);
+        UART_printStr("\r\n");
 
-    // 6. データ書き込み（★8 wordsずつループ）
-    for(i = 0, u32Index = TEST_FLASH_START_ADDR;
-        i < TEST_DATA_SIZE;
-        i += 8, u32Index += 8)
-    {
-        // ★毎回ClearFSMStatusとsetupBankSectorEnable
-        while(Fapi_checkFsmForReady() != Fapi_Status_FsmReady){}
-        flashStatus = Fapi_getFsmStatus();
-        if(flashStatus != 0)
-        {
-            Fapi_issueAsyncCommand(Fapi_ClearStatus);
-            while(Fapi_getFsmStatus() != 0){}
-        }
-
-        Fapi_setupBankSectorEnable(FLASH_WRAPPER_PROGRAM_BASE + FLASH_O_CMDWEPROTA, 0xFFFEFFFF); // ← 変更
-        Fapi_setupBankSectorEnable(FLASH_WRAPPER_PROGRAM_BASE + FLASH_O_CMDWEPROTB, 0xFFFFFFFF);
-
-        status = Fapi_issueProgrammingCommand(
-                     (uint32 *)u32Index,
-                     testData + i,
-                     8,
-                     0, 0,
-                     Fapi_AutoEccGeneration);  // ★DataOnlyではなくAutoEcc推奨
+        status = Fapi_issueAsyncCommandWithAddress(
+                     Fapi_EraseSector,
+                     (uint32 *)sectorTable[i].startAddr);
 
         while(Fapi_checkFsmForReady() != Fapi_Status_FsmReady){}
         flashStatus = Fapi_getFsmStatus();
+
         if(flashStatus != 3)
         {
-            return FLASH_TEST_PROGRAM_FAIL;
+            UART_printStr("Erase FAIL: ");
+            UART_printHex(sectorTable[i].startAddr);
+            UART_printStr("\r\n");
+            return FLASH_TEST_ERASE_FAIL;
+        }
+
+        // 消去ベリファイ
+        status = Fapi_doBlankCheck(
+                     (uint32 *)sectorTable[i].startAddr,
+                     sectorTable[i].size / 2,
+                     &flashStatusWord);
+
+        if(status != Fapi_Status_Success)
+        {
+            UART_printStr("BlankCheck FAIL: ");
+            UART_printHex(sectorTable[i].startAddr);
+            UART_printStr("\r\n");
+            return FLASH_TEST_ERASE_FAIL;
         }
     }
 
-    // 7. 書き込みベリファイ
-    uint16_t *pFlash = (uint16_t *)TEST_FLASH_START_ADDR;
-    for(i = 0; i < TEST_DATA_SIZE; i++)
+    UART_printStr("--- Erase OK ---\r\n");
+
+    //
+    // 2. 全セクターにパターンデータ書き込み
+    //
+    UART_printStr("--- Write Start ---\r\n");
+
+    u16Pattern = 0;
+
+    for(i = 0; i < NUM_SECTORS; i++)
     {
-        if(pFlash[i] != testData[i])
+        u32Index = sectorTable[i].startAddr;
+
+        UART_printStr("Writing: ");
+        UART_printHex(sectorTable[i].startAddr);
+        UART_printStr("\r\n");
+
+        // 1セクター分（0x400 words）を8wordsずつ書き込む
+        for(j = 0; j < sectorTable[i].size; j += 8, u32Index += 8)
         {
-            return FLASH_TEST_VERIFY_FAIL;
+            uint32_t k;
+            for(k = 0; k < 8; k++)
+            {
+                writeBuf[k] = (uint16_t)(0xA500U | (u16Pattern & 0xFFU));
+                u16Pattern++;
+            }
+
+            Flash_ClearAndUnlock();
+
+            status = Fapi_issueProgrammingCommand(
+                         (uint32 *)u32Index,
+                         writeBuf,
+                         8,
+                         0, 0,
+                         Fapi_AutoEccGeneration);
+
+            while(Fapi_checkFsmForReady() != Fapi_Status_FsmReady){}
+            flashStatus = Fapi_getFsmStatus();
+
+            if(flashStatus != 3)
+            {
+                UART_printStr("Write FAIL: ");
+                UART_printHex(u32Index);
+                UART_printStr("\r\n");
+                return FLASH_TEST_PROGRAM_FAIL;
+            }
         }
     }
+
+    UART_printStr("--- Write OK ---\r\n");
+
+    //
+    // 3. 全セクターベリファイ
+    //
+    UART_printStr("--- Verify Start ---\r\n");
+
+    u16Pattern = 0;
+
+    for(i = 0; i < NUM_SECTORS; i++)
+    {
+        uint16_t *pFlash = (uint16_t *)sectorTable[i].startAddr;
+
+        for(j = 0; j < sectorTable[i].size; j++)
+        {
+            uint16_t expected = (uint16_t)(0xA500U | (u16Pattern & 0xFFU));
+            if(pFlash[j] != expected)
+            {
+                UART_printStr("Verify FAIL at: ");
+                UART_printHex(sectorTable[i].startAddr + j);
+                UART_printStr(" expected: ");
+                UART_printHex(expected);
+                UART_printStr(" got: ");
+                UART_printHex(pFlash[j]);
+                UART_printStr("\r\n");
+                return FLASH_TEST_VERIFY_FAIL;
+            }
+            u16Pattern++;
+        }
+    }
+
+    UART_printStr("--- Verify OK ---\r\n");
 
     return FLASH_TEST_OK;
 }
