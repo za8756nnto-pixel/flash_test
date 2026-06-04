@@ -57,6 +57,8 @@
 								<option id="com.ti.ccstudio.buildDefinitions.C2000_22.6.compilerID.ADVICE__PERFORMANCE.899590155" name="Provide advice on optimization techniques (--advice:performance)" superClass="com.ti.ccstudio.buildDefinitions.C2000_22.6.compilerID.ADVICE__PERFORMANCE" value="--advice:performance=all" valueType="string"/>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.ti.ccstudio.buildDefinitions.C2000_22.6.compilerID.DEFINE.1683968660" name="Pre-define NAME (--define, -D)" superClass="com.ti.ccstudio.buildDefinitions.C2000_22.6.compilerID.DEFINE" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="${COM_TI_C2000WARE_SYMBOLS}"/>
+									<listOptionValue builtIn="false" value="_LAUNCHXL_F2800157"/>
+									<listOptionValue builtIn="false" value="_FLASH "/>
 								</option>
 								<inputType id="com.ti.ccstudio.buildDefinitions.C2000_22.6.compiler.inputType__C_SRCS.978237174" name="C Sources" superClass="com.ti.ccstudio.buildDefinitions.C2000_22.6.compiler.inputType__C_SRCS"/>
 								<inputType id="com.ti.ccstudio.buildDefinitions.C2000_22.6.compiler.inputType__CPP_SRCS.1244681846" name="C++ Sources" superClass="com.ti.ccstudio.buildDefinitions.C2000_22.6.compiler.inputType__CPP_SRCS"/>
@@ -77,6 +79,7 @@
 								</option>
 								<option IS_BUILTIN_EMPTY="false" IS_VALUE_EMPTY="false" id="com.ti.ccstudio.buildDefinitions.C2000_22.6.linkerID.LIBRARY.1149566278" name="Include library file or command file as input (--library, -l)" superClass="com.ti.ccstudio.buildDefinitions.C2000_22.6.linkerID.LIBRARY" useByScannerDiscovery="false" valueType="libs">
 									<listOptionValue builtIn="false" value="${COM_TI_C2000WARE_LIBRARIES}"/>
+									<listOptionValue builtIn="false" value="${COM_TI_C2000WARE_INSTALL_DIR}\driverlib\f280015x\driverlib\ccs\Release\driverlib.lib"/>
 									<listOptionValue builtIn="false" value="${COM_TI_C2000WARE_INSTALL_DIR}\libraries\flash_api\f280015x\lib\FAPI_F280015x_EABI_v2.00.10.lib"/>
 									<listOptionValue builtIn="false" value="libc.a"/>
 								</option>

@@ -24,4 +24,11 @@
 		<nature>org.eclipse.cdt.core.ccnature</nature>
 		<nature>org.eclipse.cdt.managedbuilder.core.ScannerConfigNature</nature>
 	</natures>
+	<linkedResources>
+		<link>
+			<name>device.c</name>
+			<type>1</type>
+			<locationURI>PARENT-4-PROJECT_LOC/ti/c2000/C2000Ware_6_00_01_00/device_support/f280015x/common/source/device.c</locationURI>
+		</link>
+	</linkedResources>
 </projectDescription>
