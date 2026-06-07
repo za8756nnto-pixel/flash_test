@@ -35,10 +35,14 @@
 #define I2C_RX_FULL_SIZE     256U            // 1回の最大受信サイズ（バイト）
 #define I2C_RX_WORDS         (I2C_RX_FULL_SIZE / 2U)  // 128words
 
-//-------------------------------------------------------------
-//	コンパイルスイッチ
-//-------------------------------------------------------------
-#define IRC_CODE	 0			//　割り込み(1)　と　ポーリング(0)の切り替え
+/*--------------------------------------------------------------
+ * 割り込み受信 共有変数
+ * I2C_RxISR（割り込みハンドラ）と I2C_FwUpdate() で共有する。
+ * flash_test.c からも参照するため extern 公開する。
+ *--------------------------------------------------------------*/
+volatile uint32_t g_rxByteCount;  // 受信済みバイト数
+volatile bool     g_rxComplete;   // 受信完了フラグ
+volatile uint32_t g_rxExpected;   // 今回受信すべきバイト数
 
 /*--------------------------------------------------------------
  * 戻り値
@@ -48,20 +52,12 @@ typedef enum {
     I2C_SLAVE_FLASH_ERASE_FAIL,
     I2C_SLAVE_FLASH_WRITE_FAIL,
     I2C_SLAVE_INVALID_CMD,
-    I2C_SLAVE_TIMEOUT,
 } I2cSlaveResult;
 
-/*--------------------------------------------------------------
- * 公開関数
- *--------------------------------------------------------------*/
-void            I2C_SlaveInit(void);
-I2cSlaveResult  I2C_FwUpdate(void);
-
-#if IRC_CODE
-const uint16_t* I2C_GetRxBuffer(void);
-
-// 割り込みハンドラ（PIEベクタテーブルに登録するため公開）
-__interrupt void I2C_RxISR(void);
-#endif
+//
+// 公開関数
+//
+void I2C_SlaveInit(void);
+I2cSlaveResult I2C_FwUpdate(void);
 
 #endif /* I2C_SLAVE_H */

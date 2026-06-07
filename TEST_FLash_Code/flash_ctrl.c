@@ -261,3 +261,90 @@ FlashCtrlResult Flash_WriteData(uint32_t destAddr, uint16_t *pData, uint32_t siz
 
     return FLASH_CTRL_OK;
 }
+
+/***************************************************************
+ * @brief   FW書き込みフラグ読み出し
+ *
+ * @details
+ * 0x087400 の値を読み出し、1であれば true を返す。
+ * Flash は読み出しのみなので RAM実行不要。
+ *
+ * @retval  true  : FW書き込み要求あり（値 == 0x0001）
+ * @retval  false : 要求なし
+ ***************************************************************/
+bool Flash_IsFwUpdateFlg(void)
+{
+    // Flashは通常メモリとして直接読み出し可能
+    volatile uint16_t *pFlag = (volatile uint16_t *)FLASH_NVM_FLAG_ADDR;
+    return (*pFlag == FLASH_NVM_FLAG_UPDATE);
+}
+
+/***************************************************************
+ * @brief   FW書き込みフラグクリア
+ *
+ * @details
+ * NVMセクターを消去後、フラグアドレスに 0x0000 を書き込む。
+ * Flashは 1→0 の書き込みは可能だが 0→1 は消去が必要なため、
+ * セクター消去してから 0x0000 を書き込む。
+ *
+ * @retval  FLASH_CTRL_OK          正常完了
+ * @retval  FLASH_CTRL_ERASE_FAIL  消去失敗
+ * @retval  FLASH_CTRL_WRITE_FAIL  書き込み失敗
+ ***************************************************************/
+#pragma CODE_SECTION(Flash_ClearFwUpdateFlag, ".TI.ramfunc")
+FlashCtrlResult Flash_ClearFwUpdateFlag(void)
+{
+    Fapi_StatusType      status;
+    Fapi_FlashStatusType flashStatus;
+
+    // 書き込みバッファ（8words固定、先頭のみ 0x0000、残りは 0xFFFF でパディング）
+    uint16_t flagBuf[FLASH_WRITE_WORDS];
+    uint32_t k;
+    for(k = 0U; k < FLASH_WRITE_WORDS; k++)
+    {
+        flagBuf[k] = 0xFFFFU;  // 未使用領域はイレース値で埋める
+    }
+    flagBuf[0] = FLASH_NVM_FLAG_DONE;  // 先頭wordのみ 0x0000
+
+    //
+    // 1. NVMセクターを消去する
+    //
+    Flash_ClearAndUnlock();
+
+    status = Fapi_issueAsyncCommandWithAddress(
+                 Fapi_EraseSector,
+                 (uint32 *)FLASH_NVM_SECTOR_ADDR);
+
+    while(Fapi_checkFsmForReady() != Fapi_Status_FsmReady){}
+
+    flashStatus = Fapi_getFsmStatus();
+    if(flashStatus != FLASH_FSM_STATUS_DONE)
+    {
+        return FLASH_CTRL_ERASE_FAIL;
+    }
+
+    //
+    // 2. フラグアドレスに 0x0000 を書き込む
+    //
+    Flash_ClearAndUnlock();
+
+    status = Fapi_issueProgrammingCommand(
+                 (uint32 *)FLASH_NVM_FLAG_ADDR,
+                 flagBuf,
+                 FLASH_WRITE_WORDS,
+                 0U,
+                 0U,
+                 Fapi_AutoEccGeneration);
+
+    while(Fapi_checkFsmForReady() != Fapi_Status_FsmReady){}
+
+    flashStatus = Fapi_getFsmStatus();
+    if(flashStatus != FLASH_FSM_STATUS_DONE)
+    {
+        return FLASH_CTRL_WRITE_FAIL;
+    }
+
+    return FLASH_CTRL_OK;
+}
+
+

@@ -70,6 +70,18 @@
 //CMDWEPROTB 全セクター保護解除（Sector32〜 全許可）
 #define FLASH_WEPROTB_ALL_UNLOCK  0x00000000U
 
+//----------------------------------
+// NVM領域定義（FW書き込みフラグ）
+// 【変更方法】
+// フラグのアドレスを変更する場合は FLASH_NVM_FLAG_ADDR を修正してください。
+//----------------------------------
+#define FLASH_NVM_FLAG_ADDR     0x087400U   // FW書き込みフラグ格納アドレス
+#define FLASH_NVM_FLAG_UPDATE   0x0001U     // FW書き込み要求フラグ値
+#define FLASH_NVM_FLAG_DONE     0x0000U     // FW書き込み完了フラグ値
+// NVMセクター（フラグクリア時の消去対象）
+#define FLASH_NVM_SECTOR_ADDR   0x087400U   // NVMセクター先頭
+#define FLASH_NVM_SECTOR_SIZE   0x0400U     // NVMセクターサイズ（words）
+
 //-------------------------------------
 // 構造体
 //-------------------------------------
@@ -100,5 +112,6 @@ typedef enum {
 void Flash_CtrlInit(void);  // Flash API初期化（main.cから一度だけ呼ぶ）
 FlashCtrlResult Flash_EraseRange(uint32_t startAddr, uint32_t endAddr); //指定範囲のセクターを消去
 FlashCtrlResult Flash_WriteData(uint32_t destAddr, uint16_t *pData, uint32_t sizeWords); // 指定アドレスにデータを書き込む
-
+bool            Flash_IsFwUpdateFlg(void);        // フラグ読み出し
+FlashCtrlResult Flash_ClearFwUpdateFlag(void);    // フラグクリア（0に書き換え）
 #endif /* FLASH_CTRL_H */

@@ -6,14 +6,13 @@
 #include "uart_print.h"
 #include "i2c_slave.h"
 #include <string.h>
-#if 0
+#if 1
 // FW書き込みモード判定
 // 【後で正式な条件に変更】
 // 例：0x087400のフラグを読む
 static bool isFwUpdateMode(void)
 {
-    // 仮実装：常にFW書き込みモード
-    return true;
+    return Flash_IsFwUpdateFlg();
 }
 
 static void resetDevice(void)
@@ -57,8 +56,14 @@ void main(void)
     UART_init();
     UART_printStr("=== Boot Start ===\r\n");
 
+    Interrupt_initModule();
+    Interrupt_initVectorTable();
+
     Flash_CtrlInit();
     I2C_SlaveInit();
+
+    EINT;
+    ERTM;
 
     if(isFwUpdateMode())
     {
@@ -83,6 +88,15 @@ void main(void)
             UART_printStr("FW Update FAIL\r\n");
             while(1){}
         }
+        //フラグクリア
+        FlashCtrlResult flagResult = Flash_ClearFwUpdateFlag();
+        if(flagResult != FLASH_CTRL_OK)
+        {
+            UART_printStr("Flag Clear FAIL\r\n");
+            while(1){}
+        }
+        UART_printStr("Flag Clear OK\r\n");
+
         resetDevice();
 
     }
