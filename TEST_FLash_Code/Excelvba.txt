@@ -1,0 +1,119 @@
+vbaOption Explicit
+
+' ──────────────────────────────────────────────────────────
+' ラトックシステム（RATOC）公式DLLの関数宣言
+' ──────────────────────────────────────────────────────────
+' ※ RPRxUsb61.dll がパソコンにインストールされている必要があります。
+' ※ 環境が64bit版Excelの場合は、Declareの直後に「PtrSafe」を記述してください。
+#If VBA7 Then
+    Private Declare PtrSafe Function RprUsb61I2cWrite Lib "RPRxUsb61.dll" (ByVal DevNo As Long, ByVal SlaveAddr As Byte, ByRef Buf As Byte, ByVal Length As Long) As Long
+#Else
+    Private Declare Function RprUsb61I2cWrite Lib "RPRxUsb61.dll" (ByVal DevNo As Long, ByVal SlaveAddr As Byte, ByRef Buf As Byte, ByVal Length As Long) As Long
+#End If
+
+' ──────────────────────────────────────────────────────────
+' メイン処理：BINファイルを選択してI2C送信を実行するマクロ
+' ──────────────────────────────────────────────────────────
+Sub SendBinFile_RatocI2C()
+    Dim filePath As String
+    Dim fileNo As Integer
+    Dim fileLength As Long
+    Dim binData() As Byte
+    
+    ' 1. 送信するBINファイルを選択するダイアログを表示
+    filePath = Application.GetOpenFilename("BIN Files (*.bin), *.bin")
+    If filePath = "False" Then
+        MsgBox "キャンセルされました。", vbInformation
+        Exit Sub
+    End If
+    
+    ' 2. BINファイルをバイナリモードで一括読み込み
+    fileNo = FreeFile
+    Open filePath For Binary Access Read As #fileNo
+    fileLength = LOF(fileNo)
+    
+    If fileLength = 0 Then
+        MsgBox "ファイルサイズが0バイトです。", vbCritical
+        Close #fileNo
+        Exit Sub
+    End If
+    
+    ReDim binData(0 To fileLength - 1)
+    Get #fileNo, , binData
+    Close #fileNo
+    
+    ' 3. 通信パラメータの設定
+    Dim slaveAddr As Byte
+    slaveAddr = &H50            ' ★お使いのTIマイコンのI2Cアドレス（適宜変更してください）
+    
+    Dim cmdByte As Byte
+    cmdByte = &H17              ' ご指定のコマンド: 0x17
+    
+    Dim chunkSize As Long
+    chunkSize = 256             ' 256バイトずつ区切って処理
+    
+    ' 送信パケット用配列の確保 [コマンド1B] + [Length 1B] + [データ最大256B] = 計258B
+    Dim packetBuf() As Byte
+    ReDim packetBuf(0 To 257)
+    
+    Dim fileOffset As Long
+    Dim currentChunkSize As Long
+    Dim result As Long
+    Dim i As Long
+    
+    fileOffset = 0
+    
+    ' 4. ループ処理（256バイトずつ切り出して送信）
+    Do While fileOffset < fileLength
+        
+        ' 今回送る残りのデータサイズを計算（最大256バイト）
+        If (fileLength - fileOffset) >= chunkSize Then
+            currentChunkSize = chunkSize
+        Else
+            currentChunkSize = fileLength - fileOffset
+        End If
+        
+        ' ─── パケットの組み立て [コマンド][Length][データ] ───
+        packetBuf(0) = cmdByte ' [コマンド] -> 0x17
+        
+        ' [Length] -> 256バイトの時は 0、それ未満の時はそのサイズ
+        If currentChunkSize = 256 Then
+            packetBuf(1) = 0
+        Else
+            packetBuf(1) = CByte(currentChunkSize)
+        End If
+        
+        ' [データ] -> 残りのデータをパケット配列にコピー
+        For i = 0 To currentChunkSize - 1
+            packetBuf(2 + i) = binData(fileOffset + i)
+        Next i
+        
+        ' ─── RATOC機器経由でI2C送信を実行 ───
+        ' 送信全体のサイズは： コマンド(1) + Length(1) + データサイズ
+        Dim totalPacketLength As Long
+        totalPacketLength = 2 + currentChunkSize
+        
+        ' ★ラトック公式APIの呼び出し（ハードウェアが1バイトごとに自動でACKを確認しながら送ります）
+        result = RprUsb61I2cWrite(0, slaveAddr, packetBuf(0), totalPacketLength)
+        
+        ' 送信エラーチェック
+        If result <> 0 Then
+            MsgBox "I2C通信エラーが発生しました。エラーコード: " & result, vbCritical
+            Exit Sub
+        End If
+        
+        ' 読み込み位置を進める
+        fileOffset = fileOffset + currentChunkSize
+        
+        ' ─── ご指定のウェイト処理 ───
+        ' まだ次に送るデータが残っている場合、1秒待機する
+        If fileOffset < fileLength Then
+            ' Excelを約1秒間フリーズさせて待機（高精度な1秒待機）
+            Application.Wait [Now() + "00:00:01"]
+        End If
+        
+    Loop
+    
+    MsgBox "すべてのBINファイルの送信が完了しました！" & vbCrLf & _
+           "送信サイズ: " & fileLength & " バイト", vbInformation
+End Sub
